@@ -1,0 +1,47 @@
+# Production: the bot, its database and its own TibiaData, on one machine.
+#   cp .env.example .env   # set TOKEN and POSTGRES_PASSWORD
+#   docker compose up -d --build
+services:
+  bot:
+    build: .
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      TIBIADATA_HOST: http://tibiadata:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tibiadata:
+        condition: service_started
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:18
+    # Sized for a 1 GB machine: the bot's data is small and its queries simple.
+    command: ["postgres", "-c", "shared_buffers=32MB", "-c", "max_connections=40", "-c", "work_mem=2MB",
+              "-c", "maintenance_work_mem=16MB", "-c", "effective_cache_size=128MB"]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Scrapes tibia.com per request, so the bot sees deaths within seconds instead of
+  # the public API's copies that can be 5 minutes old.
+  tibiadata:
+    image: ghcr.io/tibiadata/tibiadata-api-go:latest
+    # It exits if it can't fetch its asset list at startup, and Docker's embedded
+    # resolver fails on some hosts.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    restart: unless-stopped
+
+volumes:
+  pgdata:

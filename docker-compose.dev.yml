@@ -1,0 +1,36 @@
+# Local development: Postgres on host port 5433 (5432 is often taken) and TibiaData on 8081.
+#   docker compose -f docker-compose.dev.yml up -d
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql
+    restart: unless-stopped  # back up after a reboot, like tibiadata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Your own TibiaData: scrapes tibia.com on every request instead of serving the
+  # public API's copies that can be 5 minutes old. Set TIBIADATA_HOST to use it.
+  tibiadata:
+    image: ghcr.io/tibiadata/tibiadata-api-go:latest
+    # Docker's embedded resolver on a compose network fails on some hosts, and
+    # TibiaData exits if it can't fetch its asset list at startup.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    ports:
+      - "127.0.0.1:8081:8080"
+    restart: unless-stopped
+
+volumes:
+  pgdata-dev:
+    # Pinned: this volume was created when the dev setup lived in python/, and keeps the
+    # kill-statistics history boss predictions need.
+    name: python_pgdata-dev
